@@ -6,8 +6,8 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-# LangChain imports
-from langchain.text_splitter import RecursiveCharacterTextSplitter
+# LangChain imports (updated for v0.3+)
+from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_community.document_loaders import (
     PyPDFLoader,
     Docx2txtLoader,
@@ -64,18 +64,24 @@ class RAGIndexer:
         logger.info(f"Connected to Pinecone index: {self.index_name}")
     
     def _setup_embeddings(self):
-        """Initialize local embeddings"""
+        """Initialize HuggingFace embeddings"""
         try:
-            from langchain_ollama import OllamaEmbeddings
-            config = get_config()
-            self.embeddings = OllamaEmbeddings(
-                model=config.rag.embedding_model,
-                base_url=config.llm.base_url
+            from langchain_community.embeddings import HuggingFaceEmbeddings
+        except ImportError as exc:
+            logger.error(
+                "HuggingFace embeddings not available. Install with: pip install sentence-transformers"
             )
-            logger.info(f"Local embeddings initialized with {config.rag.embedding_model}")
-        except ImportError:
-            logger.error("langchain_ollama not available. Install with: pip install langchain-ollama")
-            raise
+            raise exc
+
+        config = get_config()
+        model_name = config.rag.embedding_model
+        device = config.rag.embedding_device
+
+        self.embeddings = HuggingFaceEmbeddings(
+            model_name=model_name,
+            model_kwargs={"device": device},
+        )
+        logger.info(f"HuggingFace embeddings initialized with {model_name} on {device}")
     
     def _setup_text_splitter(self):
         """Initialize recursive character text splitter"""

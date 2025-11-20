@@ -73,17 +73,24 @@ class RAGRetrieval:
         self._setup_reranker()
     
     def _setup_embeddings(self):
-        """Initialize local embeddings"""
+        """Initialize HuggingFace embeddings"""
         try:
-            from langchain_ollama import OllamaEmbeddings
-            self.embeddings = OllamaEmbeddings(
-                model=self.embedding_model,
-                base_url=get_config().llm.base_url
+            from langchain_community.embeddings import HuggingFaceEmbeddings
+        except ImportError as exc:
+            logger.error(
+                "HuggingFace embeddings not available. Install with: pip install sentence-transformers"
             )
-            logger.info(f"Local embeddings initialized with {self.embedding_model}")
-        except ImportError:
-            logger.error("langchain_ollama not available. Install with: pip install langchain-ollama")
-            raise
+            raise exc
+
+        config = get_config()
+        self.embeddings = HuggingFaceEmbeddings(
+            model_name=self.embedding_model,
+            model_kwargs={"device": config.rag.embedding_device},
+        )
+        logger.info(
+            f"HuggingFace embeddings initialized with {self.embedding_model} "
+            f"on {config.rag.embedding_device}"
+        )
     
     def _setup_vector_store(self):
         """Initialize Pinecone vector store"""

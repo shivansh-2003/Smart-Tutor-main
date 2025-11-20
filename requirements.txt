@@ -7,10 +7,12 @@ requests
 # Enhanced RAG System Dependencies
 ollama
 langchain
+langchain-text-splitters
 langchain-community
 langchain-pinecone
 langchain-core
 langchain-ollama
+sentence-transformers
 pydantic
 pinecone-client
 numpy

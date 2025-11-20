@@ -159,8 +159,14 @@ class LLMConfig:
 class RAGConfig:
     """RAG system configuration"""
     index_name: str = field(default_factory=lambda: os.getenv("PINECONE_INDEX_NAME", "smart-tutor"))
-    embedding_model: str = "nomic-embed-text:latest"
-    embedding_dimension: int = 768
+    embedding_model: str = field(default_factory=lambda: os.getenv(
+        "HUGGINGFACE_EMBEDDING_MODEL",
+        "sentence-transformers/all-MiniLM-L6-v2"
+    ))
+    embedding_device: str = field(default_factory=lambda: os.getenv("HUGGINGFACE_DEVICE", "cpu"))
+    embedding_dimension: int = field(
+        default_factory=lambda: int(os.getenv("HUGGINGFACE_EMBED_DIM", "384"))
+    )
     chunk_size: int = 1000
     chunk_overlap: int = 200
     search_k: int = 20
