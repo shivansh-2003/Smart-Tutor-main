@@ -12,7 +12,7 @@ import sys
 sys.path.append(str(Path(__file__).parent.parent.parent))
 
 from rag.retrieval import RAGRetrieval
-from mermaid.models import GeneratedQuery, RAGSearchResult, RetrievedDocument, QueryType
+from ..models import GeneratedQuery, RAGSearchResult, RetrievedDocument, QueryType
 
 logger = logging.getLogger(__name__)
 

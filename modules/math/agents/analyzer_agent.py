@@ -1,18 +1,12 @@
 import json
-from langchain_google_genai import ChatGoogleGenerativeAI
-from models.schemas import ProcessedInput, IntentClassification, ProblemAnalysis
-from prompts.problem_analyzer import PROBLEM_ANALYSIS_PROMPT
-from dotenv import load_dotenv
-
-load_dotenv()
+from ..models.schemas import ProcessedInput, IntentClassification, ProblemAnalysis
+from ..prompts.problem_analyzer import PROBLEM_ANALYSIS_PROMPT
+from ..config import MathModuleConfig
 
 class ProblemAnalyzerAgent:
-    def __init__(self, api_key: str):
-        self.llm = ChatGoogleGenerativeAI(
-            model="gemini-2.0-flash-exp",
-            google_api_key=api_key,
-            temperature=0
-        )
+    def __init__(self):
+        self.config = MathModuleConfig()
+        self.llm = self.config.get_llm_for_agent("problem_analysis")
     
     def analyze_problem(
         self, 

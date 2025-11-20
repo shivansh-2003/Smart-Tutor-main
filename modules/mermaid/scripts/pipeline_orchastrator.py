@@ -24,18 +24,18 @@ from langchain_core.messages import BaseMessage
 from langchain_core.output_parsers import BaseOutputParser, PydanticOutputParser
 from langchain_core.prompts import PromptTemplate, ChatPromptTemplate
 from langchain_core.runnables import RunnablePassthrough, RunnableLambda
-from langchain_google_genai import ChatGoogleGenerativeAI
 
+# Local imports
+from modules.mermaid.config import MermaidModuleConfig
+from ..models import *
+from .rag_service import RAGService
 
-from mermaid.models import *
-from mermaid.scripts.rag_service import RAGService
-
-# Import existing prompt templates (no changes)
-from mermaid.prompt.query_analysis import QUERY_ANALYSIS_PROMPT, INTENT_CLASSIFICATION_PROMPT
-from mermaid.prompt.query_generator import QUERY_GENERATOR_PROMPT, DIAGRAM_SPECIFIC_GUIDANCE
-from mermaid.prompt.information_synthesis import INFORMATION_SYNTHESIS_PROMPT
-from mermaid.prompt.LLM import MERMAID_GENERATION_PROMPT, DIAGRAM_SPECIFIC_INSTRUCTIONS
-from mermaid.prompt.multi_step import (
+# Import existing prompt templates
+from ..prompts.query_analysis import QUERY_ANALYSIS_PROMPT, INTENT_CLASSIFICATION_PROMPT
+from ..prompts.query_generator import QUERY_GENERATOR_PROMPT, DIAGRAM_SPECIFIC_GUIDANCE
+from ..prompts.information_synthesis import INFORMATION_SYNTHESIS_PROMPT
+from ..prompts.LLM import MERMAID_GENERATION_PROMPT, DIAGRAM_SPECIFIC_INSTRUCTIONS
+from ..prompts.multi_step import (
     INITIAL_GENERATION_REVIEW_PROMPT, 
     ENHANCEMENT_PROMPT, 
     VALIDATION_PROMPT
@@ -113,10 +113,11 @@ class IntentClassificationOutputParser(BaseOutputParser[Dict[str, Any]]):
 class MermaidDiagramPipeline:
     """LangGraph-based pipeline orchestrator for Mermaid diagram generation"""
     
-    def __init__(self, llm_model: str = "gemini-2.0-flash", namespace: str = "documents"):
-        self.llm = ChatGoogleGenerativeAI(model=llm_model, temperature=0)
+    def __init__(self, namespace: str = "documents"):
+        self.config = MermaidModuleConfig()
         self.rag_service = RAGService(namespace=namespace)
         self.namespace = namespace
+        self._llm_cache = {}
         
         # Initialize output parsers (keeping existing)
         self.query_analysis_parser = QueryAnalysisOutputParser()
@@ -128,10 +129,31 @@ class MermaidDiagramPipeline:
         # Create LangGraph workflow
         self.workflow = self._create_langgraph_workflow()
         
-        logger.info(f"LangGraph pipeline initialized with LLM: {llm_model}, Namespace: {namespace}")
+        logger.info(f"LangGraph pipeline initialized with local models, Namespace: {namespace}")
+    
+    def _get_llm(self, task_name: str):
+        """Get LLM for specific task"""
+        if task_name not in self._llm_cache:
+            self._llm_cache[task_name] = self.config.get_llm_for_task(task_name)
+        return self._llm_cache[task_name]
     
     def _create_chains(self):
         """Create modern LangChain runnables using | operator"""
+        
+        # Create LangChain-compatible LLM wrapper
+        try:
+            from langchain_ollama import ChatOllama
+            from core.config import get_config
+            config = get_config()
+            # Use a single LLM instance for all chains (can be optimized later)
+            self.llm = ChatOllama(
+                model=config.llm.complex_model,
+                base_url=config.llm.base_url,
+                temperature=0
+            )
+        except ImportError:
+            logger.error("langchain_ollama not available. Install with: pip install langchain-ollama")
+            raise
         
         def _escape_prompt_keep_vars(template_str: str, keep_vars: List[str]) -> str:
             """Escape all braces in prompt except placeholders in keep_vars"""

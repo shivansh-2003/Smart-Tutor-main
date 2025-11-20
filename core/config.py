@@ -2,34 +2,165 @@
 Centralized configuration for Smart Tutor
 """
 
+import importlib
 import os
 from typing import Dict, Any, Optional
 from pathlib import Path
 from dataclasses import dataclass, field
-from dotenv import load_dotenv
+from enum import Enum
+def _load_env():
+    try:
+        return importlib.import_module("dotenv").load_dotenv()
+    except ImportError:  # pragma: no cover - optional dependency
+        return None
 
-load_dotenv()
+
+_load_env()
+
+
+class TaskComplexity(str, Enum):
+    """Task complexity levels"""
+    SIMPLE = "simple"
+    MODERATE = "moderate"
+    COMPLEX = "complex"
+
+
+@dataclass
+class ModelConfig:
+    """Configuration for a specific model"""
+    name: str
+    context_window: int = 8192
+    temperature: float = 0.7
+    top_p: float = 0.9
+    top_k: int = 40
+    repeat_penalty: float = 1.1
+    num_predict: int = -1
+    num_ctx: Optional[int] = None
+    num_batch: Optional[int] = None
+    num_gpu: Optional[int] = None
 
 
 @dataclass
 class LLMConfig:
-    """LLM configuration"""
-    provider: str = "openai"
-    model: str = "gpt-4o-mini"
+    """Local model configuration with task-based model selection."""
+    base_url: str = field(default_factory=lambda: os.getenv("LLM_BASE_URL", "http://localhost:11434"))
     temperature: float = 0.7
     max_tokens: Optional[int] = None
-    
-    # Provider-specific models
-    openai_model: str = "gpt-4o-mini"
-    google_model: str = "gemini-2.0-flash-exp"
-    ollama_model: str = "gpt-oss:20b"
+
+    # Complex task models (20B-32B)
+    complex_model: str = field(default_factory=lambda: os.getenv("LLM_COMPLEX_MODEL", "gpt-oss:20b"))
+    complex_model_fallback: str = field(default_factory=lambda: os.getenv("LLM_COMPLEX_FALLBACK", "deepseek-r1:32b"))
+
+    # Simple task models (2B-3B)
+    simple_model: str = field(default_factory=lambda: os.getenv("LLM_SIMPLE_MODEL", "qwen2.5:3b"))
+    simple_model_fallback: str = field(default_factory=lambda: os.getenv("LLM_SIMPLE_FALLBACK", "gemma2:2b"))
+
+    # Embeddings
+    embedding_model: str = field(default_factory=lambda: os.getenv("LLM_EMBEDDING_MODEL", "nomic-embed-text:latest"))
+    embedding_dimension: int = 768
+
+    # Model configurations
+    models: Dict[str, ModelConfig] = field(default_factory=lambda: {
+        "gpt-oss:20b": ModelConfig(
+            name="gpt-oss:20b",
+            context_window=32768,
+            temperature=0.7,
+            top_p=0.9,
+        ),
+        "deepseek-r1:32b": ModelConfig(
+            name="deepseek-r1:32b",
+            context_window=16384,
+            temperature=0.8,
+            top_p=0.95,
+        ),
+        "qwen2.5:3b": ModelConfig(
+            name="qwen2.5:3b",
+            context_window=32768,
+            temperature=0.7,
+            top_p=0.9,
+        ),
+        "gemma2:2b": ModelConfig(
+            name="gemma2:2b",
+            context_window=8192,
+            temperature=0.7,
+            top_p=0.9,
+        ),
+        "phi3:3.8b": ModelConfig(
+            name="phi3:3.8b",
+            context_window=4096,
+            temperature=0.7,
+            top_p=0.9,
+        ),
+    })
+
+    # Task complexity mapping
+    task_complexity_map: Dict[str, TaskComplexity] = field(default_factory=lambda: {
+        # Router & context tasks
+        "intent_classification": TaskComplexity.COMPLEX,
+        "context_analysis": TaskComplexity.COMPLEX,
+
+        # Math module
+        "math_solve_problem": TaskComplexity.COMPLEX,
+        "math_prove_theorem": TaskComplexity.COMPLEX,
+        "math_analyze": TaskComplexity.COMPLEX,
+        "math_hint": TaskComplexity.SIMPLE,
+        "math_validate": TaskComplexity.SIMPLE,
+
+        # Mermaid module
+        "mermaid_generate": TaskComplexity.COMPLEX,
+        "mermaid_query_analysis": TaskComplexity.MODERATE,
+        "mermaid_synthesis": TaskComplexity.COMPLEX,
+        "mermaid_validation": TaskComplexity.SIMPLE,
+
+        # Mindmap module
+        "mindmap_create": TaskComplexity.COMPLEX,
+        "mindmap_expand": TaskComplexity.MODERATE,
+
+        # Chat module
+        "chat_rag_synthesis": TaskComplexity.COMPLEX,
+        "chat_casual": TaskComplexity.SIMPLE,
+        "chat_follow_up": TaskComplexity.SIMPLE,
+        "chat_greeting": TaskComplexity.SIMPLE,
+
+        # RAG tasks
+        "rag_rerank": TaskComplexity.MODERATE,
+        "rag_synthesis": TaskComplexity.COMPLEX,
+        "rag_query_expansion": TaskComplexity.SIMPLE,
+    })
+
+    # Performance settings
+    simple_task_timeout: int = 30
+    complex_task_timeout: int = 120
+    max_retries: int = 3
+    retry_delay: float = 1.0
+    batch_size: int = 5
+
+    def get_model_for_task(self, task_name: str) -> str:
+        """Select appropriate model for a task."""
+        complexity = self.task_complexity_map.get(task_name, TaskComplexity.MODERATE)
+
+        if complexity == TaskComplexity.COMPLEX:
+            return self.complex_model
+
+        return self.simple_model
+
+    def get_model_config(self, model_name: Optional[str] = None) -> ModelConfig:
+        """Get configuration for a specific model."""
+        target = model_name or self.simple_model
+        return self.models.get(target, self.models[self.simple_model])
+
+    def get_timeout_for_task(self, task_name: str) -> int:
+        """Return timeout window based on task complexity."""
+        complexity = self.task_complexity_map.get(task_name, TaskComplexity.MODERATE)
+        return self.complex_task_timeout if complexity == TaskComplexity.COMPLEX else self.simple_task_timeout
 
 
 @dataclass
 class RAGConfig:
     """RAG system configuration"""
-    index_name: str = "smart-tutor"
-    embedding_model: str = "text-embedding-3-small"
+    index_name: str = field(default_factory=lambda: os.getenv("PINECONE_INDEX_NAME", "smart-tutor"))
+    embedding_model: str = "nomic-embed-text:latest"
+    embedding_dimension: int = 768
     chunk_size: int = 1000
     chunk_overlap: int = 200
     search_k: int = 20
@@ -44,8 +175,6 @@ class RouterConfig:
     confidence_threshold: float = 0.7
     use_context: bool = True
     max_retries: int = 3
-    router_model: str = "gpt-4o-mini"
-    router_temperature: float = 0.1
 
 
 @dataclass
@@ -64,22 +193,10 @@ class ModuleConfig:
     # Chat module
     chat_modes: list = field(default_factory=lambda: ["learn", "hint", "quiz", "eli5", "custom"])
     chat_default_mode: str = "learn"
-    
-    # Math module
-    math_model: str = "gemini-2.0-flash-exp"
-    math_temperature: float = 0.0
-    
-    # Mermaid module
-    mermaid_model: str = "gpt-4o"
-    mermaid_temperature: float = 0.1
     diagram_types: list = field(default_factory=lambda: [
         "flowchart", "sequence", "class", "er_diagram",
         "state", "graph", "journey", "gitgraph", "c4"
     ])
-    
-    # Mindmap module
-    mindmap_model: str = "gpt-oss:20b"
-    mindmap_temperature: float = 0.1
 
 
 @dataclass
@@ -101,15 +218,11 @@ class PathConfig:
 @dataclass
 class APIConfig:
     """API keys and endpoints"""
-    openai_api_key: str = field(default_factory=lambda: os.getenv("OPENAI_API_KEY", ""))
-    google_api_key: str = field(default_factory=lambda: os.getenv("GOOGLE_API_KEY", ""))
     pinecone_api_key: str = field(default_factory=lambda: os.getenv("PINECONE_API_KEY", ""))
-    ollama_base_url: str = field(default_factory=lambda: os.getenv("OLLAMA_BASE_URL", "http://localhost:11434"))
     
     def validate(self) -> bool:
         """Check if required API keys are present"""
         required = {
-            "openai": self.openai_api_key,
             "pinecone": self.pinecone_api_key
         }
         missing = [name for name, key in required.items() if not key]
@@ -178,45 +291,36 @@ class Config:
         """Validate configuration"""
         return self.api.validate()
     
-    def get_llm_config(self, provider: Optional[str] = None) -> Dict[str, Any]:
-        """Get LLM configuration for specific provider"""
-        provider = provider or self.llm.provider
-        
-        model_map = {
-            "openai": self.llm.openai_model,
-            "google": self.llm.google_model,
-            "ollama": self.llm.ollama_model
-        }
-        
+    def get_llm_config(self, task_name: Optional[str] = None) -> Dict[str, Any]:
+        """Get local model configuration for a specific task"""
+        resolved_task = task_name or "chat_casual"
+        model_name = self.llm.get_model_for_task(resolved_task)
+        model_config = self.llm.get_model_config(model_name)
+
         return {
-            "provider": provider,
-            "model": model_map.get(provider, self.llm.model),
-            "temperature": self.llm.temperature,
-            "max_tokens": self.llm.max_tokens
+            "model": model_name,
+            "base_url": self.llm.base_url,
+            "timeout": self.llm.get_timeout_for_task(resolved_task),
+            "task": resolved_task,
+            "options": {
+                "temperature": model_config.temperature,
+                "top_p": model_config.top_p,
+                "top_k": model_config.top_k,
+                "repeat_penalty": model_config.repeat_penalty,
+                "num_predict": model_config.num_predict,
+            },
         }
     
-    def get_module_llm_config(self, module_name: str) -> Dict[str, Any]:
-        """Get LLM config for specific module"""
-        module_configs = {
-            "math": {
-                "provider": "google",
-                "model": self.modules.math_model,
-                "temperature": self.modules.math_temperature
-            },
-            "mermaid": {
-                "provider": "openai",
-                "model": self.modules.mermaid_model,
-                "temperature": self.modules.mermaid_temperature
-            },
-            "mindmap": {
-                "provider": "ollama",
-                "model": self.modules.mindmap_model,
-                "temperature": self.modules.mindmap_temperature
-            },
-            "chat": self.get_llm_config()
+    def get_module_llm_config(self, module_name: str, task_name: Optional[str] = None) -> Dict[str, Any]:
+        """Get LLM config for specific module (task-aware)"""
+        module_task_fallbacks = {
+            "math": "math_solve_problem",
+            "mermaid": "mermaid_generate",
+            "mindmap": "mindmap_create",
+            "chat": "chat_casual",
         }
-        
-        return module_configs.get(module_name, self.get_llm_config())
+        resolved_task = task_name or module_task_fallbacks.get(module_name, f"{module_name}_default")
+        return self.get_llm_config(task_name=resolved_task)
     
     def is_module_enabled(self, module_name: str) -> bool:
         """Check if module is enabled"""

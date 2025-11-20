@@ -1,17 +1,16 @@
 # Core dependencies for SmartTutor
 streamlit
-google-generativeai
 streamlit-cookies-manager
 python-dotenv
 requests
 
 # Enhanced RAG System Dependencies
+ollama
 langchain
 langchain-community
 langchain-pinecone
 langchain-core
-langchain-openai
-langchain-google-genai
+langchain-ollama
 pydantic
 pinecone-client
 numpy
@@ -23,8 +22,6 @@ python-pptx
 markdown
 beautifulsoup4
 flashrank
-openai
 langgraph
-langchain-groq
 networkx
 tavily-python

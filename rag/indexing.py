@@ -14,9 +14,11 @@ from langchain_community.document_loaders import (
     UnstructuredPowerPointLoader,
     TextLoader
 )
-from langchain_openai import OpenAIEmbeddings
 from langchain_pinecone import PineconeVectorStore
-from langchain.schema import Document
+from langchain_core.documents import Document
+
+# Local imports
+from core.config import get_config
 
 # Pinecone imports
 from pinecone import Pinecone, ServerlessSpec
@@ -31,10 +33,11 @@ class RAGIndexer:
     
     def __init__(self):
         # Configuration
-        self.index_name = "smart-tutor"
-        self.dimension = 1536
-        self.chunk_size = 1000
-        self.chunk_overlap = 200
+        config = get_config()
+        self.index_name = config.rag.index_name
+        self.dimension = config.rag.embedding_dimension
+        self.chunk_size = config.rag.chunk_size
+        self.chunk_overlap = config.rag.chunk_overlap
         
         # Initialize components
         self._setup_pinecone()
@@ -61,12 +64,18 @@ class RAGIndexer:
         logger.info(f"Connected to Pinecone index: {self.index_name}")
     
     def _setup_embeddings(self):
-        """Initialize OpenAI embeddings"""
-        self.embeddings = OpenAIEmbeddings(
-            model="text-embedding-3-small",
-            openai_api_key=os.getenv("OPENAI_API_KEY")
-        )
-        logger.info("OpenAI embeddings initialized")
+        """Initialize local embeddings"""
+        try:
+            from langchain_ollama import OllamaEmbeddings
+            config = get_config()
+            self.embeddings = OllamaEmbeddings(
+                model=config.rag.embedding_model,
+                base_url=config.llm.base_url
+            )
+            logger.info(f"Local embeddings initialized with {config.rag.embedding_model}")
+        except ImportError:
+            logger.error("langchain_ollama not available. Install with: pip install langchain-ollama")
+            raise
     
     def _setup_text_splitter(self):
         """Initialize recursive character text splitter"""

@@ -1,19 +1,13 @@
 import json
 import requests
-from langchain_google_genai import ChatGoogleGenerativeAI
-from models.schemas import ProcessedInput, IntentClassification, ProblemAnalysis, MathSolution
-from prompts.math_solver import MATH_SOLVER_PROMPT
-from dotenv import load_dotenv
-
-load_dotenv()
+from ..models.schemas import ProcessedInput, IntentClassification, ProblemAnalysis, MathSolution
+from ..prompts.math_solver import MATH_SOLVER_PROMPT
+from ..config import MathModuleConfig
 
 class MathSolverAgent:
-    def __init__(self, api_key: str):
-        self.llm = ChatGoogleGenerativeAI(
-            model="gemini-2.0-flash-exp",
-            google_api_key=api_key,
-            temperature=0
-        )
+    def __init__(self):
+        self.config = MathModuleConfig()
+        self.llm = self.config.get_llm_for_agent("solution_generation")
     
     def solve_problem(
         self, 

@@ -1,21 +1,14 @@
 import json
 import base64
 from typing import Union
-from langchain_core.messages import BaseMessage
-from langchain_google_genai import ChatGoogleGenerativeAI
-from models.schemas import ProcessedInput, InputType
-from prompts.input_processor import IMAGE_PROCESSING_PROMPT
-from dotenv import load_dotenv
-
-load_dotenv()
+from ..models.schemas import ProcessedInput, InputType
+from ..prompts.input_processor import IMAGE_PROCESSING_PROMPT
+from ..config import MathModuleConfig
 
 class InputAgent:
-    def __init__(self, api_key: str):
-        self.llm = ChatGoogleGenerativeAI(
-            model="gemini-2.0-flash-exp",
-            google_api_key=api_key,
-            max_output_tokens=1000
-        )
+    def __init__(self):
+        self.config = MathModuleConfig()
+        self.llm = self.config.get_llm_for_agent("input_processing")
     
     def process_input(self, content: Union[str, bytes], input_type: InputType) -> ProcessedInput:
         """Process text or image input and extract mathematical content"""
@@ -32,25 +25,17 @@ class InputAgent:
             return self._process_image(content)
     
     def _process_image(self, image_data: bytes) -> ProcessedInput:
-        """Process image input using Gemini Flash"""
+        """Process image input using local model"""
         
         # Encode image to base64
         base64_image = base64.b64encode(image_data).decode('utf-8')
         
-        # Create message with image for Gemini
-        from langchain_core.messages import HumanMessage
+        # Create prompt with image description request
+        # Note: Local models may not support direct image input
+        # This is a text-based workaround
+        prompt = f"{IMAGE_PROCESSING_PROMPT}\n\nImage data (base64): {base64_image[:100]}... [truncated]"
         
-        message = HumanMessage(
-            content=[
-                {"type": "text", "text": IMAGE_PROCESSING_PROMPT},
-                {
-                    "type": "image_url",
-                    "image_url": f"data:image/jpeg;base64,{base64_image}"
-                }
-            ]
-        )
-        
-        response = self.llm.invoke([message])
+        response = self.llm.invoke(prompt)
         
         try:
             # Clean response content - remove markdown code blocks if present

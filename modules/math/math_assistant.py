@@ -1,21 +1,18 @@
 import time
 import json
 from typing import Union
-from agents.input_agent import InputAgent
-from agents.intent_agent import IntentAgent
-from agents.analyzer_agent import ProblemAnalyzerAgent
-from agents.solver_agent import MathSolverAgent
-from models.schemas import InputType, MathAssistantResponse
-from dotenv import load_dotenv
-
-load_dotenv()
+from .agents.input_agent import InputAgent
+from .agents.intent_agent import IntentAgent
+from .agents.analyzer_agent import ProblemAnalyzerAgent
+from .agents.solver_agent import MathSolverAgent
+from .models.schemas import InputType, MathAssistantResponse
 
 class MathAssistant:
-    def __init__(self, openai_api_key: str):
-        self.input_agent = InputAgent(openai_api_key)
-        self.intent_agent = IntentAgent(openai_api_key)
-        self.analyzer_agent = ProblemAnalyzerAgent(openai_api_key)
-        self.solver_agent = MathSolverAgent(openai_api_key)
+    def __init__(self):
+        self.input_agent = InputAgent()
+        self.intent_agent = IntentAgent()
+        self.analyzer_agent = ProblemAnalyzerAgent()
+        self.solver_agent = MathSolverAgent()
     
     def process_query(self, content: Union[str, bytes], input_type: InputType) -> MathAssistantResponse:
         """Main processing pipeline for math queries"""
@@ -49,22 +46,7 @@ def main():
     print("Get step-by-step solutions and explanations for mathematical problems")
     print()
     
-    # Get API Key from environment or input
-    import os
-    google_api_key = os.getenv("GOOGLE_API_KEY")
-    
-    if not google_api_key:
-        try:
-            google_api_key = input("Enter your Google API Key: ").strip()
-        except EOFError:
-            print("❌ No API key found. Please set GOOGLE_API_KEY environment variable or run interactively.")
-            return
-    
-    if not google_api_key:
-        print("❌ Please enter your Google API key to use the Math Assistant.")
-        return
-    
-    math_assistant = MathAssistant(google_api_key)
+    math_assistant = MathAssistant()
     
     while True:
         print("\n" + "=" * 50)
@@ -192,17 +174,10 @@ def display_response(response: MathAssistantResponse):
 
 def test_mode():
     """Test mode that runs a sample problem without interactive input"""
-    import os
-    google_api_key = os.getenv("GOOGLE_API_KEY")
-    
-    if not google_api_key:
-        print("❌ No API key found. Please set GOOGLE_API_KEY environment variable.")
-        return
-    
     print("🧮 AI Math Assistant - Test Mode")
     print("=" * 50)
     
-    math_assistant = MathAssistant(google_api_key)
+    math_assistant = MathAssistant()
     
     # Test with a simple math problem
     test_problem = "Solve for x: 2x + 5 = 13"

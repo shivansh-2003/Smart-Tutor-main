@@ -8,7 +8,7 @@ from typing import Dict, Any, Optional, List, Tuple
 from enum import Enum
 from dataclasses import dataclass
 
-from shared.llm_factory import get_llm
+from shared.llm_factory import get_task_llm
 from shared.validators import ValidationResult
 from core.config import get_config
 
@@ -118,10 +118,7 @@ Consider:
     
     def __init__(self):
         self.config = get_config()
-        self.llm = get_llm(
-            model=self.config.router.router_model,
-            temperature=self.config.router.router_temperature
-        )
+        self.llm = get_task_llm("intent_classification")
     
     def route(
         self,

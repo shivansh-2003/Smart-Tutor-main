@@ -9,23 +9,53 @@ from typing import List, Dict, Any, Optional
 from dotenv import load_dotenv
 
 # LangChain imports
-from langchain.schema import Document
-from langchain_openai import OpenAIEmbeddings, ChatOpenAI
+from langchain_core.documents import Document
 from langchain_pinecone import PineconeVectorStore
-from langchain.retrievers import ContextualCompressionRetriever
-from langchain.retrievers.document_compressors import FlashrankRerank
-from langchain.chains import RetrievalQA
 from langchain_core.retrievers import BaseRetriever
-from langchain_core.example_selectors import  MaxMarginalRelevanceExampleSelector
+
+# Configure logging first (needed for import warnings)
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+# ContextualCompressionRetriever - try multiple import paths
+try:
+    from langchain.retrievers.contextual_compression import ContextualCompressionRetriever
+except ImportError:
+    try:
+        from langchain_community.retrievers import ContextualCompressionRetriever
+    except ImportError:
+        # Fallback - define a minimal version if not available
+        logger.warning("ContextualCompressionRetriever not found, reranking may be limited")
+        ContextualCompressionRetriever = None
+
+# FlashrankRerank - try multiple import paths  
+try:
+    from langchain_community.document_compressors.flashrank import FlashrankRerank
+except ImportError:
+    try:
+        from langchain_community.document_compressors import FlashrankRerank
+    except ImportError:
+        logger.warning("FlashrankRerank not found, reranking will be skipped")
+        FlashrankRerank = None
+
+# RetrievalQA import
+try:
+    from langchain.chains import RetrievalQA
+except ImportError:
+    try:
+        from langchain.chains.retrieval_qa.base import RetrievalQA
+    except ImportError:
+        logger.warning("RetrievalQA not found, Q&A functionality may be limited")
+        RetrievalQA = None
+
+# Local imports
+from core.config import get_config
+from shared.llm_factory import LLMFactory
 
 # Pinecone imports
 from pinecone import Pinecone
 
 load_dotenv()
-
-# Configure logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
 
 
 class RAGRetrieval:
@@ -33,8 +63,9 @@ class RAGRetrieval:
     
     def __init__(self):
         # Configuration
-        self.index_name = "smart-tutor"
-        self.embedding_model = "text-embedding-3-small"
+        config = get_config()
+        self.index_name = config.rag.index_name
+        self.embedding_model = config.rag.embedding_model
         
         # Initialize components
         self._setup_embeddings()
@@ -42,12 +73,17 @@ class RAGRetrieval:
         self._setup_reranker()
     
     def _setup_embeddings(self):
-        """Initialize OpenAI embeddings"""
-        self.embeddings = OpenAIEmbeddings(
-            model=self.embedding_model,
-            openai_api_key=os.getenv("OPENAI_API_KEY")
-        )
-        logger.info("Embeddings initialized")
+        """Initialize local embeddings"""
+        try:
+            from langchain_ollama import OllamaEmbeddings
+            self.embeddings = OllamaEmbeddings(
+                model=self.embedding_model,
+                base_url=get_config().llm.base_url
+            )
+            logger.info(f"Local embeddings initialized with {self.embedding_model}")
+        except ImportError:
+            logger.error("langchain_ollama not available. Install with: pip install langchain-ollama")
+            raise
     
     def _setup_vector_store(self):
         """Initialize Pinecone vector store"""
@@ -60,10 +96,18 @@ class RAGRetrieval:
     
     def _setup_reranker(self):
         """Initialize FlashRank reranker"""
-        self.reranker = FlashrankRerank(
-            model="ms-marco-MiniLM-L-12-v2"
-        )
-        logger.info("Reranker initialized")
+        if FlashrankRerank is None:
+            logger.warning("FlashrankRerank not available, reranking will be skipped")
+            self.reranker = None
+        else:
+            try:
+                self.reranker = FlashrankRerank(
+                    model="ms-marco-MiniLM-L-12-v2"
+                )
+                logger.info("Reranker initialized")
+            except Exception as e:
+                logger.warning(f"Failed to initialize reranker: {e}")
+                self.reranker = None
     
     def search_documents(
         self, 
@@ -119,29 +163,34 @@ class RAGRetrieval:
         k: int = 5
     ) -> List[Document]:
         """Step 3: Re-rank documents using FlashRank"""
-        if not self.reranker or not documents:
+        if not self.reranker or not documents or ContextualCompressionRetriever is None:
+            # Fallback: just return top k documents
             return documents[:k]
         
-        # Create a simple retriever for the documents
-        class SimpleRetriever(BaseRetriever):
-            def __init__(self, docs):
-                super().__init__()
-                self._docs = docs
+        try:
+            # Create a simple retriever for the documents
+            class SimpleRetriever(BaseRetriever):
+                def __init__(self, docs):
+                    super().__init__()
+                    self._docs = docs
+                
+                def _get_relevant_documents(self, query, *, run_manager=None):
+                    return self._docs
             
-            def _get_relevant_documents(self, query, *, run_manager=None):
-                return self._docs
-        
-        # Create compression retriever with reranker
-        base_retriever = SimpleRetriever(documents)
-        compression_retriever = ContextualCompressionRetriever(
-            base_compressor=self.reranker,
-            base_retriever=base_retriever
-        )
-        
-        # Get reranked documents
-        reranked_docs = compression_retriever.get_relevant_documents(query)
-        logger.info(f"Reranked to {len(reranked_docs[:k])} top documents")
-        return reranked_docs[:k]
+            # Create compression retriever with reranker
+            base_retriever = SimpleRetriever(documents)
+            compression_retriever = ContextualCompressionRetriever(
+                base_compressor=self.reranker,
+                base_retriever=base_retriever
+            )
+            
+            # Get reranked documents
+            reranked_docs = compression_retriever.get_relevant_documents(query)
+            logger.info(f"Reranked to {len(reranked_docs[:k])} top documents")
+            return reranked_docs[:k]
+        except Exception as e:
+            logger.warning(f"Reranking failed, using top-k selection: {e}")
+            return documents[:k]
     
     def rag_pipeline(
         self, 
@@ -191,16 +240,27 @@ class RAGRetrieval:
     def create_retrieval_qa(
         self, 
         namespace: str = "documents",
-        model_name: str = "gpt-3.5-turbo",
+        task_name: str = "rag_synthesis",
         search_k: int = 10
-    ) -> RetrievalQA:
+    ):
         """Create RetrievalQA chain with custom retriever"""
-        # Set up LLM
-        llm = ChatOpenAI(
-            model_name=model_name,
-            temperature=0,
-            openai_api_key=os.getenv("OPENAI_API_KEY")
-        )
+        if RetrievalQA is None:
+            raise ImportError("RetrievalQA is not available. Please install required LangChain packages.")
+        
+        # Set up local LLM
+        from shared.llm_factory import get_task_llm
+        llm_wrapper = get_task_llm(task_name)
+        
+        # Create a LangChain-compatible wrapper
+        class LocalLLMWrapper:
+            def __init__(self, llm):
+                self.llm = llm
+            
+            def invoke(self, prompt, **kwargs):
+                response = self.llm.invoke(prompt)
+                return response
+        
+        llm = LocalLLMWrapper(llm_wrapper)
         
         # Create custom retriever that uses our RAG pipeline
         class CustomRAGRetriever(BaseRetriever):
@@ -229,20 +289,20 @@ class RAGRetrieval:
             verbose=True
         )
         
-        logger.info(f"Created RetrievalQA chain with {model_name}")
+        logger.info(f"Created RetrievalQA chain with task {task_name}")
         return qa_chain
     
     def answer_question(
         self, 
         question: str, 
         namespace: str = "documents",
-        model_name: str = "gpt-3.5-turbo"
+        task_name: str = "rag_synthesis"
     ) -> Dict[str, Any]:
         """
         Complete Q&A pipeline: RAG retrieval + LLM generation
         """
         # Create QA chain
-        qa_chain = self.create_retrieval_qa(namespace, model_name)
+        qa_chain = self.create_retrieval_qa(namespace, task_name)
         
         # Get answer
         result = qa_chain({"query": question})
@@ -296,7 +356,7 @@ if __name__ == "__main__":
     response = rag.answer_question(
         question=test_query,
         namespace="documents",
-        model_name="gpt-3.5-turbo"
+        task_name="rag_synthesis"
     )
     
     print(f"Question: {response['question']}")
