@@ -16,6 +16,7 @@ from ui.utils import (
     get_conversation_context,
     display_error
 )
+from core.config import get_config
 
 
 def render_chat_interface():
@@ -26,6 +27,10 @@ def render_chat_interface():
         st.session_state.chatbot = ChatBot()
     
     chatbot = st.session_state.chatbot
+    chatbot.namespace = st.session_state.get(
+        'rag_namespace',
+        get_config().rag.namespace_default
+    )
     session_id = get_session_id()
     context = get_conversation_context()
     

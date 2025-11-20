@@ -7,6 +7,7 @@ import uuid
 from typing import Optional, Dict, Any
 from core.context_manager import ContextManager, ConversationContext
 from core.router import Intent, IntentRouter
+from core.config import get_config
 
 
 def get_session_id() -> str:
@@ -45,6 +46,8 @@ def initialize_session_state():
         st.session_state.chat_mode = 'learn'
         st.session_state.use_rag = True
         st.session_state.show_debug = False
+        config = get_config()
+        st.session_state.rag_namespace = config.rag.namespace_default
 
 
 def format_error_message(error: Exception) -> str:

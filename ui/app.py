@@ -22,6 +22,7 @@ from ui.components.chat_interface import render_chat_interface
 from ui.components.math_interface import render_math_interface
 from ui.components.mermaid_interface import render_mermaid_interface
 from core.router import Intent
+from core.config import get_config
 
 
 def main():
@@ -150,6 +151,10 @@ def handle_chat_query(user_input: str, context):
         st.session_state.chatbot = ChatBot()
     
     chatbot = st.session_state.chatbot
+    chatbot.namespace = st.session_state.get(
+        'rag_namespace',
+        get_config().rag.namespace_default
+    )
     session_id = st.session_state.get('session_id', 'default')
     use_rag = st.session_state.get('use_rag', True)
     

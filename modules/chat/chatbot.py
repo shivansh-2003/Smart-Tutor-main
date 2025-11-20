@@ -12,6 +12,7 @@ from rag.retrieval import RAGRetrieval
 from .memory import ChatMemory
 from .prompts import PromptLoader
 from .config import ChatModuleConfig
+from core.config import get_config
 
 
 class ChatBot:
@@ -19,8 +20,8 @@ class ChatBot:
     
     MODES = ["learn", "hint", "quiz", "eli5", "custom"]
     
-    def __init__(self, 
-                 namespace: str = "general",
+    def __init__(self,
+                 namespace: Optional[str] = None,
                  mode: str = "learn"):
         """Initialize chatbot with RAG and LLM"""
         
@@ -31,7 +32,8 @@ class ChatBot:
         self.prompt_loader = PromptLoader()
         
         # Settings
-        self.namespace = namespace
+        config = get_config()
+        self.namespace = namespace or config.rag.namespace_default
         self.current_mode = mode
         self.custom_instructions = ""
         self._llm = None
